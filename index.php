@@ -1,29 +1,85 @@
+<?php
+
+$db = new SQLite3("contacts.db");
+
+$message = "";
+
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+
+    $name = trim($_POST["name"] ?? "");
+    $phone = trim($_POST["phone"] ?? "");
+    $email = trim($_POST["email"] ?? "");
+
+    if ($name !== "" && $phone !== "") {
+
+        $stmt = $db->prepare(
+            "INSERT INTO contacts (name, phone, email)
+             VALUES (:name, :phone, :email)"
+        );
+
+        $stmt->bindValue(":name", $name, SQLITE3_TEXT);
+        $stmt->bindValue(":phone", $phone, SQLITE3_TEXT);
+        $stmt->bindValue(":email", $email, SQLITE3_TEXT);
+
+        $stmt->execute();
+
+        $message = "Contact Added Successfully!";
+    }
+}
+
+$result = $db->query("SELECT * FROM contacts ORDER BY id DESC");
+
+?>
+
 <!DOCTYPE html>
 <html>
 <head>
     <title>Contact Management System</title>
 </head>
+
 <body>
 
-    <h1>Contact Management System</h1>
+<h1>Contact Management System</h1>
 
-    <h2>Add Contact</h2>
+<?php if ($message !== ""): ?>
+    <h2><?php echo htmlspecialchars($message); ?></h2>
+<?php endif; ?>
 
-    <form method="post">
+<h2>Add Contact</h2>
 
-        <label>Name:</label><br>
-        <input type="text" name="name" required><br><br>
+<form method="post">
 
-        <label>Phone:</label><br>
-        <input type="text" name="phone" required><br><br>
+    <label>Name:</label><br>
+    <input type="text" name="name" required><br><br>
 
-        <label>Email:</label><br>
-        <input type="email" name="email"><br><br>
+    <label>Phone:</label><br>
+    <input type="text" name="phone" required><br><br>
 
-        <button type="submit">Add Contact</button>
+    <label>Email:</label><br>
+    <input type="email" name="email"><br><br>
 
-    </form>
+    <button type="submit">Add Contact</button>
+
+</form>
+
+<h2>Contacts</h2>
+
+<?php while ($row = $result->fetchArray(SQLITE3_ASSOC)): ?>
+
+    <p>
+        <strong>Name:</strong>
+        <?php echo htmlspecialchars($row["name"]); ?><br>
+
+        <strong>Phone:</strong>
+        <?php echo htmlspecialchars($row["phone"]); ?><br>
+
+        <strong>Email:</strong>
+        <?php echo htmlspecialchars($row["email"]); ?>
+    </p>
+
+    <hr>
+
+<?php endwhile; ?>
 
 </body>
 </html>
-
