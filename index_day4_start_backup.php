@@ -1,26 +1,15 @@
-
 <?php
-
-
 
 $db = new SQLite3("contacts.db");
 
 $message = "";
-
-if (isset($_POST["delete_id"])) {
-    $delete_id = (int) $_POST["delete_id"];
-
-    $stmt = $db->prepare("DELETE FROM contacts WHERE id = :id");
-    $stmt->bindValue(":id", $delete_id, SQLITE3_INTEGER);
-    $stmt->execute();
-}
-
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     $name = trim($_POST["name"] ?? "");
     $phone = trim($_POST["phone"] ?? "");
     $email = trim($_POST["email"] ?? "");
+
     if ($name !== "" && $phone !== "") {
 
         $stmt = $db->prepare(
@@ -84,15 +73,13 @@ $result = $db->query("SELECT * FROM contacts ORDER BY id DESC");
         <strong>Phone:</strong>
         <?php echo htmlspecialchars($row["phone"]); ?><br>
 
-        <strong>Email:</strong> <?php echo htmlspecialchars($row["email"]); ?>
+        <strong>Email:</strong>
+        <?php echo htmlspecialchars($row["email"]); ?>
     </p>
 
     <hr>
-<form method="post">
-    <input type="hidden" name="delete_id" value="<?php echo $row["id"]; ?>">
-    <button type="submit">Delete</button>
-</form>
 
 <?php endwhile; ?>
+
 </body>
 </html>

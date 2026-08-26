@@ -84,7 +84,7 @@ $result = $db->query("SELECT * FROM contacts ORDER BY id DESC");
         <strong>Phone:</strong>
         <?php echo htmlspecialchars($row["phone"]); ?><br>
 
-        <strong>Email:</strong> <?php echo htmlspecialchars($row["email"]); ?>
+        <strong>Email:</strong>
     </p>
 
     <hr>
