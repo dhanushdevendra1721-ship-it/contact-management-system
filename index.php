@@ -21,8 +21,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["add_contact"])) {
     $phone = trim($_POST["phone"] ?? "");
     $email = trim($_POST["email"] ?? "");
 
-    if ($name !== "" && $phone !== "") {
+    if ($name !== "" && preg_match("/^[0-9]{10}$/", $phone)) {
 
+        $check = $db->prepare("SELECT id FROM contacts WHERE phone = :phone");
+        $check->bindValue(":phone", $phone, SQLITE3_TEXT);
+        $result = $check->execute();
+        if ($result->fetchArray(SQLITE3_ASSOC)) {
+            $message = "Phone number already exists!";
+        } else {
         $stmt = $db->prepare(
             "INSERT INTO contacts (name, phone, email)
              VALUES (:name, :phone, :email)"
@@ -34,6 +40,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["add_contact"])) {
         $stmt->execute();
 
         $message = "Contact Added Successfully!";
+        }
     }
 }
 
@@ -45,6 +52,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["update_contact"])) {
     $phone = trim($_POST["phone"] ?? "");
     $email = trim($_POST["email"] ?? "");
 
+    if ($name !== "" && preg_match("/^[0-9]{10}$/", $phone)) {
     $stmt = $db->prepare(
         "UPDATE contacts
          SET name = :name, phone = :phone, email = :email
@@ -56,9 +64,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["update_contact"])) {
     $stmt->bindValue(":email", $email, SQLITE3_TEXT);
     $stmt->bindValue(":id", $id, SQLITE3_INTEGER);
     $stmt->execute();
-
     $message = "Contact Updated Successfully!";
-}
+
+    }
+    else {
+        $message = "Invalid name or phone number!";
+    }
+    }
 
 /* DELETE CONTACT */
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["delete_id"])) {
@@ -211,10 +223,10 @@ button:hover {
     <input type="text" name="name" required><br>
 
     <label>Phone:</label><br>
-    <input type="text" name="phone" required><br>
+    <input type="text" name="phone" required pattern="[0-9]{10}" maxlength="10"><br>
 
     <label>Email:</label><br>
-    <input type="email" name="email"><br>
+    <input type="email" name="email" required><br>
 
     <input type="hidden" name="add_contact" value="1">
 
@@ -250,7 +262,7 @@ button:hover {
         type="text"
         name="phone"
         value="<?= htmlspecialchars($edit_contact["phone"]) ?>"
-        required
+        required pattern="[0-9]{10}" maxlength="10"
     ><br>
 
     <label>Email:</label><br>
