@@ -21,7 +21,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["add_contact"])) {
     $phone = trim($_POST["phone"] ?? "");
     $email = trim($_POST["email"] ?? "");
 
-    if ($name !== "" && preg_match("/^[0-9]{10}$/", $phone)) {
+    if ($name !== "" && preg_match("/^[0-9]{10}$/", $phone) && ($email === "" || filter_var($email, FILTER_VALIDATE_EMAIL))) {
 
         $check = $db->prepare("SELECT id FROM contacts WHERE phone = :phone");
         $check->bindValue(":phone", $phone, SQLITE3_TEXT);
@@ -52,7 +52,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["update_contact"])) {
     $phone = trim($_POST["phone"] ?? "");
     $email = trim($_POST["email"] ?? "");
 
-    if ($name !== "" && preg_match("/^[0-9]{10}$/", $phone)) {
+    if ($name !== "" && preg_match("/^[0-9]{10}$/", $phone) && ($email === "" || filter_var($email, FILTER_VALIDATE_EMAIL))) {
     $stmt = $db->prepare(
         "UPDATE contacts
          SET name = :name, phone = :phone, email = :email
