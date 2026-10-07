@@ -1,15 +1,66 @@
 <?php
 
-$db = new SQLite3("contacts.db");
+function loadContacts(string $file): array
+{
+    if (!file_exists($file)) {
+        return [];
+    }
 
-$db->exec("
-    CREATE TABLE IF NOT EXISTS contacts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        phone TEXT NOT NULL,
-        email TEXT
-    )
-");
+    $json = file_get_contents($file);
+    if ($json === false) {
+        throw new RuntimeException("Unable to read the contacts file.");
+    }
+
+    $storedContacts = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+    if (!is_array($storedContacts)) {
+        throw new UnexpectedValueException("The contacts file must contain a JSON array.");
+    }
+
+    $nextId = 1;
+    foreach ($storedContacts as $contact) {
+        if (is_array($contact) && isset($contact["id"]) && is_numeric($contact["id"])) {
+            $nextId = max($nextId, (int)$contact["id"] + 1);
+        }
+    }
+
+    $contacts = [];
+    $usedIds = [];
+    foreach ($storedContacts as $contact) {
+        if (!is_array($contact) || !isset($contact["name"], $contact["phone"])) {
+            throw new UnexpectedValueException("A contact in the contacts file is missing required data.");
+        }
+
+        $id = isset($contact["id"]) ? (int)$contact["id"] : $nextId++;
+        if ($id < 1 || isset($usedIds[$id])) {
+            throw new UnexpectedValueException("The contacts file contains an invalid or duplicate contact ID.");
+        }
+
+        $usedIds[$id] = true;
+        $contacts[] = [
+            "id" => $id,
+            "name" => (string)$contact["name"],
+            "phone" => (string)$contact["phone"],
+            "email" => (string)($contact["email"] ?? ""),
+        ];
+    }
+
+    return $contacts;
+}
+
+function saveContacts(string $file, array $contacts): void
+{
+    $json = json_encode($contacts, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    if (file_put_contents($file, $json . PHP_EOL, LOCK_EX) === false) {
+        throw new RuntimeException("Unable to save contacts. Check that the project folder is writable.");
+    }
+}
+
+$contactsFile = __DIR__ . DIRECTORY_SEPARATOR . "contacts.json";
+$contacts = loadContacts($contactsFile);
+$nextId = 1;
+foreach ($contacts as $contact) {
+    $nextId = max($nextId, $contact["id"] + 1);
+}
 
 $message = "";
 $edit_contact = null;
@@ -22,25 +73,28 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["add_contact"])) {
     $email = trim($_POST["email"] ?? "");
 
     if ($name !== "" && preg_match("/^[0-9]{10}$/", $phone) && ($email === "" || filter_var($email, FILTER_VALIDATE_EMAIL))) {
+        $phoneExists = false;
+        foreach ($contacts as $contact) {
+            if ($contact["phone"] === $phone) {
+                $phoneExists = true;
+                break;
+            }
+        }
 
-        $check = $db->prepare("SELECT id FROM contacts WHERE phone = :phone");
-        $check->bindValue(":phone", $phone, SQLITE3_TEXT);
-        $result = $check->execute();
-        if ($result->fetchArray(SQLITE3_ASSOC)) {
+        if ($phoneExists) {
             $message = "Phone number already exists!";
         } else {
-        $stmt = $db->prepare(
-            "INSERT INTO contacts (name, phone, email)
-             VALUES (:name, :phone, :email)"
-        );
-
-        $stmt->bindValue(":name", $name, SQLITE3_TEXT);
-        $stmt->bindValue(":phone", $phone, SQLITE3_TEXT);
-        $stmt->bindValue(":email", $email, SQLITE3_TEXT);
-        $stmt->execute();
-
-        $message = "Contact Added Successfully!";
+            $contacts[] = [
+                "id" => $nextId,
+                "name" => $name,
+                "phone" => $phone,
+                "email" => $email,
+            ];
+            saveContacts($contactsFile, $contacts);
+            $message = "Contact Added Successfully!";
         }
+    } else {
+        $message = "Invalid name, phone number, or email address!";
     }
 }
 
@@ -52,79 +106,86 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["update_contact"])) {
     $phone = trim($_POST["phone"] ?? "");
     $email = trim($_POST["email"] ?? "");
 
-    if ($name !== "" && preg_match("/^[0-9]{10}$/", $phone) && ($email === "" || filter_var($email, FILTER_VALIDATE_EMAIL))) {
-    $stmt = $db->prepare(
-        "UPDATE contacts
-         SET name = :name, phone = :phone, email = :email
-         WHERE id = :id"
-    );
+    $contactIndex = null;
+    foreach ($contacts as $index => $contact) {
+        if ($contact["id"] === $id) {
+            $contactIndex = $index;
+            break;
+        }
+    }
 
-    $stmt->bindValue(":name", $name, SQLITE3_TEXT);
-    $stmt->bindValue(":phone", $phone, SQLITE3_TEXT);
-    $stmt->bindValue(":email", $email, SQLITE3_TEXT);
-    $stmt->bindValue(":id", $id, SQLITE3_INTEGER);
-    $stmt->execute();
-    $message = "Contact Updated Successfully!";
+    if ($contactIndex === null) {
+        $message = "Contact not found!";
+    } elseif ($name === "" || !preg_match("/^[0-9]{10}$/", $phone) || ($email !== "" && !filter_var($email, FILTER_VALIDATE_EMAIL))) {
+        $message = "Invalid name, phone number, or email address!";
+    } else {
+        $phoneExists = false;
+        foreach ($contacts as $index => $contact) {
+            if ($index !== $contactIndex && $contact["phone"] === $phone) {
+                $phoneExists = true;
+                break;
+            }
+        }
 
+        if ($phoneExists) {
+            $message = "Phone number already exists!";
+        } else {
+            $contacts[$contactIndex]["name"] = $name;
+            $contacts[$contactIndex]["phone"] = $phone;
+            $contacts[$contactIndex]["email"] = $email;
+            saveContacts($contactsFile, $contacts);
+            $message = "Contact Updated Successfully!";
+        }
     }
-    else {
-        $message = "Invalid name or phone number!";
-    }
-    }
+}
 
 /* DELETE CONTACT */
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["delete_id"])) {
-
     $id = (int)$_POST["delete_id"];
+    $remainingContacts = array_values(array_filter(
+        $contacts,
+        static function (array $contact) use ($id): bool {
+            return $contact["id"] !== $id;
+        }
+    ));
 
-    $stmt = $db->prepare(
-        "DELETE FROM contacts WHERE id = :id"
-    );
-
-    $stmt->bindValue(":id", $id, SQLITE3_INTEGER);
-    $stmt->execute();
-
-    $message = "Contact Deleted Successfully!";
+    if (count($remainingContacts) === count($contacts)) {
+        $message = "Contact not found!";
+    } else {
+        $contacts = $remainingContacts;
+        saveContacts($contactsFile, $contacts);
+        $message = "Contact Deleted Successfully!";
+    }
 }
 
 /* EDIT CONTACT */
 if (isset($_GET["edit_id"])) {
-
     $id = (int)$_GET["edit_id"];
-
-    $stmt = $db->prepare(
-        "SELECT * FROM contacts WHERE id = :id"
-    );
-
-    $stmt->bindValue(":id", $id, SQLITE3_INTEGER);
-
-    $result = $stmt->execute();
-    $edit_contact = $result->fetchArray(SQLITE3_ASSOC);
+    foreach ($contacts as $contact) {
+        if ($contact["id"] === $id) {
+            $edit_contact = $contact;
+            break;
+        }
+    }
 }
 
 /* SEARCH */
 $search = trim($_GET["search"] ?? "");
 
 if ($search !== "") {
-
-    $stmt = $db->prepare(
-        "SELECT * FROM contacts
-         WHERE name LIKE :search
-         OR phone LIKE :search
-         OR email LIKE :search
-         ORDER BY id DESC"
-    );
-
-    $stmt->bindValue(":search", "%" . $search . "%", SQLITE3_TEXT);
-
-    $result = $stmt->execute();
-
-} else {
-
-    $result = $db->query(
-        "SELECT * FROM contacts ORDER BY id DESC"
-    );
+    $contacts = array_values(array_filter(
+        $contacts,
+        static function (array $contact) use ($search): bool {
+            return stripos($contact["name"], $search) !== false
+                || stripos($contact["phone"], $search) !== false
+                || stripos($contact["email"], $search) !== false;
+        }
+    ));
 }
+
+usort($contacts, static function (array $first, array $second): int {
+    return $second["id"] <=> $first["id"];
+});
 
 ?>
 
@@ -320,7 +381,7 @@ button:hover {
 
 <h2>Contacts</h2>
 
-<?php while ($row = $result->fetchArray(SQLITE3_ASSOC)): ?>
+<?php foreach ($contacts as $row): ?>
 
 <div class="contact">
 
@@ -370,7 +431,7 @@ button:hover {
 
 <hr>
 
-<?php endwhile; ?>
+<?php endforeach; ?>
 
 </body>
 </html>
